@@ -27,14 +27,13 @@ import java.util.UUID;
 public class OrderService {
 
     private final OrderRepository orderRepository;
-//    private final WebClient.Builder webClientBuilder;
+    private final WebClient.Builder webClientBuilder;
 //    private final ObservationRegistry observationRegistry;
 //    private final ApplicationEventPublisher applicationEventPublisher;
 
 
 
-    public void placeOrder(OrderRequest orderRequest)
-    {
+    public void placeOrder(OrderRequest orderRequest) throws IllegalAccessException {
         Order order= new Order();
         order.setOrderNumber(UUID.randomUUID().toString());
 
@@ -43,7 +42,24 @@ public class OrderService {
                 stream().map(this::mapToDto).toList();
 
         order.setOrderLineItemsList(orderLineItems);
-        orderRepository.save(order);
+
+            List<String> skuCodes = order.getOrderLineItemsList().stream()
+            .map(OrderLineItems::getSkuCode)
+            .toList();
+            // Call Inventory Service, and place order if product is in stock
+            InventoryResponse[] inventoryResponses = webClientBuilder.build().get().uri("http://localhost:8082/api/inventory",
+                            uriBuilder -> uriBuilder.queryParam("skuCode",skuCodes).build())
+                    .retrieve().bodyToMono(InventoryResponse[].class).block();
+
+            Boolean allProductsInStock= Arrays.stream(inventoryResponses).allMatch(InventoryResponse::isInStock);
+
+                if(allProductsInStock)
+            {
+                orderRepository.save(order);
+            }
+            else {
+                throw  new IllegalAccessException("Product is not in stock");
+            }
 
     }
 //    public String placeOrder(OrderRequest orderRequest) {
